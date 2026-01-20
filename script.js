@@ -192,7 +192,11 @@ async function fetchWikipediaImageUrls(scientificName, maxImages = 12) {
         t &&
         t.startsWith("File:") &&
         !t.match(/\.(svg|ogg|ogv|pdf)$/i) &&
-        !t.toLowerCase().includes("logo")
+        !t.toLowerCase().includes("logo") &&
+        !t.toLowerCase().includes("icon") &&
+        !t.toLowerCase().includes("map") &&
+        !t.toLowerCase().includes("range") &&
+        !t.toLowerCase().includes("diagram")
     )
     .slice(0, maxImages);
 
@@ -242,20 +246,16 @@ async function setImageForCurrent() {
   const img = document.getElementById("animalImage");
   if (!img) return;
 
-  // Optional HTML toggle: <input type="checkbox" id="showImagesToggle" checked>
   const showToggle = document.getElementById("showImagesToggle");
   const showImages = showToggle ? showToggle.checked : true;
 
   if (!showImages) {
-    img.src = "https://upload.wikimedia.org/wikipedia/commons/placeholder.png";
+    // We'll hide via refreshImageDisplay()
     return;
   }
 
   const sci = current?.["Scientific Name"];
-  if (!sci) {
-    img.src = "https://upload.wikimedia.org/wikipedia/commons/placeholder.png";
-    return;
-  }
+  if (!sci) return;
 
   // Loading placeholder while API runs
   img.src = "https://upload.wikimedia.org/wikipedia/commons/placeholder.png";
@@ -268,6 +268,22 @@ async function setImageForCurrent() {
     img.src = chosen;
   } catch (e) {
     console.log("Image fetch failed:", e);
+  }
+}
+
+// Hide/show image immediately when toggled; reload current image when turning on
+function refreshImageDisplay() {
+  const img = document.getElementById("animalImage");
+  const showToggle = document.getElementById("showImagesToggle");
+  const showImages = showToggle ? showToggle.checked : true;
+
+  if (!img) return;
+
+  if (!showImages) {
+    img.style.display = "none";
+  } else {
+    img.style.display = "block";
+    if (current) setImageForCurrent();
   }
 }
 
@@ -295,14 +311,16 @@ function newQuestion() {
         "Select at least one checkbox (or this row is missing data for your selected fields).";
     }
     generateInputs(); // likely none
+    refreshImageDisplay();
     return;
   }
 
   // Build input boxes for selected fields
   generateInputs();
 
-  // Set image using Wikipedia (Scientific Name)
+  // Set image using Wikipedia (Scientific Name) and respect toggle
   setImageForCurrent();
+  refreshImageDisplay();
 
   // Clear result text and clear input values
   if (resultEl) resultEl.innerHTML = "";
@@ -369,6 +387,13 @@ function nextQuestion() {
 document.addEventListener("DOMContentLoaded", () => {
   updateScore();
   setNextEnabled(false);
+
+  // Make the image toggle work instantly
+  const showToggle = document.getElementById("showImagesToggle");
+  if (showToggle) {
+    showToggle.addEventListener("change", refreshImageDisplay);
+  }
+  refreshImageDisplay();
 
   fetch(DATA_FILE)
     .then((response) => response.json())
