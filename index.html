@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Anna's Taxonomy Trainer</title>
+</head>
+<body>
+
+
+<h1>Taxonomy Practice</h1>
+
+<label><input type="checkbox" id="showImagesToggle" checked> Show images</label><br>
+
+<img id="animalImage" width="300">
+
+<br><br>
+
+<h3>Select what you want to be tested on:</h3>
+
+<div id="toggleArea"></div>
+
+<br>
+
+<div id="inputs"></div>
+
+<button onclick="checkAnswer()">Submit</button>
+<button onclick="nextQuestion()" id="nextBtn" disabled>Next</button>
+
+<br><br>
+
+<p id="result"></p>
+
+<h3>Score</h3>
+<p id="score">Correct: 0 | Wrong: 0</p>
+
+<script src="script.js" defer></script>
+
+</body>
+</html>
+
