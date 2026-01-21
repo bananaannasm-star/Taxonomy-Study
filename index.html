@@ -3,68 +3,137 @@
 <head>
   <title>Anna's Taxonomy Trainer</title>
   <meta charset="utf-8" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; }
+    .wrap { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 320px;
+      padding: 16px;
+      border-right: 1px solid #ddd;
+      background: #f9f9f9;
+      overflow-y: auto;
+    }
+    .main { flex: 1; padding: 24px; }
+    img { max-width: 420px; height: auto; display: block; }
+    .muted { color: #666; font-size: 0.95em; }
+    hr { border: none; border-top: 1px solid #ddd; margin: 16px 0; }
+    .controls button { margin-right: 8px; }
+    .hintBox {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px dashed #999;
+      border-radius: 8px;
+      max-width: 520px;
+      display: none;
+      background: #fff;
+    }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  </style>
 </head>
 
 <body>
+<div class="wrap">
 
-<h1>Taxonomy Practice</h1>
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <h2>Settings</h2>
 
-<p id="version"><strong>Version:</strong> v1.0 — Updated Jan 19, 2026</p>
+    <p id="version" class="muted">
+      <strong>Version:</strong> v1.5 — Updated Jan 20, 2026
+    </p>
 
-<hr>
+    <hr>
 
-<h3>How to use</h3>
-<ol>
-  <li>Choose what you want to be tested on using the checkboxes.</li>
-  <li>Type your answers in the input boxes.</li>
-  <li>Click <strong>Submit</strong> to check your answers and update your score.</li>
-  <li>Click <strong>Next</strong> to get a new species.</li>
-  <li>Use <strong>Show images</strong> to turn images on/off (for harder studying, turn images off).</li>
-<li>If having trouble with image try clicking images off then back on.</li>
-</ol>
+    <label>
+      <input type="checkbox" id="showImagesToggle" checked>
+      Show images
+    </label>
 
-<hr>
+    <hr>
 
-<label>
-  <input type="checkbox" id="showImagesToggle" checked>
-  Show images
-</label>
+    <h3>Study filters</h3>
+    <p class="muted" style="margin-top: 6px;">
+      Choose which animal groups to study right now:
+    </p>
 
-<br><br>
+    <label><input type="checkbox" id="filterBird" checked> Bird</label><br>
+    <label><input type="checkbox" id="filterMammal" checked> Mammal</label><br>
+    <label><input type="checkbox" id="filterReptile" checked> Reptile</label>
 
-<img id="animalImage" width="350" alt="Species image">
+    <p id="filterStatus" class="muted" style="margin-top: 10px;"></p>
 
-<br><br>
+    <hr>
 
-<h3>Select what you want to be tested on:</h3>
-<div id="toggleArea"></div>
+    <h3>Flashcard hint</h3>
+    <label>
+      <input type="checkbox" id="enableCommonHintToggle">
+      Enable Common Name hint (auto-reveal)
+    </label>
 
-<br>
+    <div style="margin-top: 10px;">
+      <button type="button" onclick="toggleCommonName()" id="revealCommonBtn" disabled>
+        Hide Common Name
+      </button>
+    </div>
 
-<div id="inputs"></div>
+    <hr>
 
-<button onclick="checkAnswer()">Submit</button>
-<button onclick="nextQuestion()" id="nextBtn" disabled>Next</button>
+    <h3>Select what you want to be tested on:</h3>
+    <div id="toggleArea"></div>
 
-<br><br>
+    <hr>
 
-<p id="result"></p>
+    <h3>Credits</h3>
+    <p class="muted">
+      Tool built by Anna Mooradian for study practice.<br>
+      Images are pulled from Wikipedia / Wikimedia Commons via the MediaWiki API (Wikidata + Commons).<br>
+      Image licenses vary by file; see the source page for attribution/licensing.<br>
+      Code written by ChatGPT-5 OpenAI. Species data compiled from Dr. Heather Liwanag's MSCI 324 class from Cal Poly SLO.
+    </p>
+  </div>
 
-<h3>Score</h3>
-<p id="score">Correct: 0 | Wrong: 0</p>
+  <!-- MAIN -->
+  <div class="main">
+    <h1>Taxonomy Practice</h1>
 
-<hr>
+    <h3>How to use</h3>
+    <ol>
+      <li>Pick your animal group filters (left sidebar) to study only those right now.</li>
+      <li>Choose what you want to be tested on using the checkboxes (left sidebar).</li>
+      <li>Type your answers in the input boxes.</li>
+      <li>Click <strong>Submit</strong> to check your answers and update your score.</li>
+      <li>Click <strong>Next</strong> to get a new species.</li>
+      <li>Use <strong>Show images</strong> to turn images on/off (harder studying: turn off).</li>
+      <li>If you enable <strong>Common Name hint</strong>, it auto-reveals like flashcards.</li>
+    </ol>
 
-<h3>Credits</h3>
-<p>
-  Tool built by Anna Mooradian for study practice.
-  Images are pulled from Wikipedia / Wikimedia Commons via the MediaWiki API.
-  Image licenses vary by file; see the source page for attribution/licensing.
-  Code written by ChatGPT-5 OpenAI. Species data complied from Dr. Heather Liwanag's MSCI 324 class from Cal Poly SLO.
+    <hr>
 
-</p>
+    <div class="row">
+      <img id="animalImage" alt="Species image">
+    </div>
+
+    <div id="commonHintBox" class="hintBox"></div>
+
+    <hr>
+
+    <div id="inputs"></div>
+
+    <div class="controls">
+      <button onclick="checkAnswer()">Submit</button>
+      <button onclick="nextQuestion()" id="nextBtn" disabled>Next</button>
+    </div>
+
+    <br>
+
+    <p id="result"></p>
+
+    <h3>Score</h3>
+    <p id="score">Correct: 0 | Wrong: 0</p>
+  </div>
+
+</div>
 
 <script src="script.js" defer></script>
-
 </body>
 </html>

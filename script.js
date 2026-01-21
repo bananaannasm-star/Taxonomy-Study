@@ -1,381 +1,502 @@
-// ====== CONFIG ======
-const DATA_FILE = "species_list.json"; // your JSON filename (must be in same folder as index.html)
+// ================= CONFIG =================
+const DATA_FILE = "species_list.json";
 
-// ====== STATE ======
+// ================= STATE =================
 let species = [];
 let current = null;
 
 let correctCount = 0;
 let wrongCount = 0;
 
-// ====== IMAGE STATE ======
-const wikiImageCache = {}; // scientificName -> [url, url, ...]
-const wikiUsedImages = {}; // scientificName -> Set(url)
+let SCI_KEY = null;
+let COMMON_KEY = null;
+let TYPE_KEY = null;
 
-// ====== HELPERS ======
+let questionToken = 0;
+
+// Flashcard hint state
+let commonHintEnabled = false;
+let commonRevealed = false;
+
+// Filter state
+let filteredSpecies = []; // subset of species based on Bird/Mammal/Reptile filters
+
+// ================= HELPERS =================
 function slugifyKey(key) {
-  // Turn "Common Name" -> "Common_Name" (safe for HTML ids)
   return String(key).replace(/[^A-Za-z0-9_-]/g, "_");
 }
-
 function normalizeAnswer(s) {
-  // forgiving comparison: trim, lowercase, collapse whitespace
   return String(s ?? "")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
 }
-
 function isBlank(value) {
   return value === null || value === undefined || String(value).trim() === "";
 }
-
 function getKeysInOrder() {
-  if (!species || species.length === 0) return [];
-  // Most CSV->JSON converters preserve column order in object keys
+  if (!species.length) return [];
   return Object.keys(species[0]);
 }
-
-function getSelectedKeys() {
+function detectKeyLike(...needles) {
   const keys = getKeysInOrder();
-  const selected = [];
-
-  for (const key of keys) {
-    const sid = slugifyKey(key);
-    const toggle = document.getElementById(`toggle_${sid}`);
-    if (toggle && toggle.checked && !toggle.disabled) selected.push(key);
+  for (const k of keys) {
+    const lk = k.toLowerCase();
+    if (needles.every(n => lk.includes(n))) return k;
   }
-  return selected;
+  return null;
+}
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+function setNextEnabled(val) {
+  const btn = document.getElementById("nextBtn");
+  if (btn) btn.disabled = !val;
+}
+function updateScore() {
+  const scoreEl = document.getElementById("score");
+  if (!scoreEl) return;
+  scoreEl.innerHTML = `Correct: ${correctCount} | Wrong: ${wrongCount}`;
+}
+function cleanScientificName(raw) {
+  if (!raw) return "";
+  let s = String(raw).trim().replace(/\s+/g, " ");
+  s = s.replace(/\s*\(.*?\)\s*$/g, "");
+  s = s.replace(/\s+[A-Z][a-z]+,?\s+\d{4}\s*$/g, "");
+  s = s.replace(/\s+\d{4}\s*$/g, "");
+  const parts = s.split(" ").filter(Boolean);
+  if (parts.length >= 2) s = parts[0] + " " + parts[1];
+  return s.trim();
 }
 
-// ====== UI BUILDERS ======
+// ================= FILTERS (Bird/Mammal/Reptile) =================
+function normTypeValue(v) {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function getActiveTypeFilters() {
+  const bird = document.getElementById("filterBird")?.checked;
+  const mammal = document.getElementById("filterMammal")?.checked;
+  const reptile = document.getElementById("filterReptile")?.checked;
+
+  const active = new Set();
+  if (bird) active.add("bird");
+  if (mammal) active.add("mammal");
+  if (reptile) active.add("reptile");
+  return active;
+}
+
+function computeFilteredSpecies() {
+  const status = document.getElementById("filterStatus");
+  const active = getActiveTypeFilters();
+
+  // If none checked, don't allow studying anything
+  if (active.size === 0) {
+    filteredSpecies = [];
+    if (status) status.textContent = "No filters selected — check at least one (Bird/Mammal/Reptile).";
+    return;
+  }
+
+  // If there is no Type column, just pass everything through
+  if (!TYPE_KEY) {
+    filteredSpecies = [...species];
+    if (status) status.textContent = `Type column not found — studying all species (${filteredSpecies.length}).`;
+    return;
+  }
+
+  filteredSpecies = species.filter(row => active.has(normTypeValue(row?.[TYPE_KEY])));
+  if (status) status.textContent = `Studying ${filteredSpecies.length} species matching your filters.`;
+}
+
+// ================= TOGGLES + INPUTS =================
+function getSelectedKeys() {
+  return getKeysInOrder().filter((key) => {
+    const t = document.getElementById(`toggle_${slugifyKey(key)}`);
+    return t && t.checked && !t.disabled;
+  });
+}
+
 function createToggles() {
   const area = document.getElementById("toggleArea");
   if (!area) return;
 
   area.innerHTML = "";
-
-  const keys = getKeysInOrder();
-
-  for (const key of keys) {
+  getKeysInOrder().forEach((key) => {
     const sid = slugifyKey(key);
+    area.innerHTML += `<label><input type="checkbox" id="toggle_${sid}" checked> ${escapeHtml(key)}</label><br>`;
+  });
 
-    // Default: everything checked (change later if you want)
-    const row = document.createElement("label");
-    row.innerHTML = `<input type="checkbox" id="toggle_${sid}" checked> ${key}`;
-    area.appendChild(row);
-    area.appendChild(document.createElement("br"));
-  }
-
-  // When any toggle changes, rebuild inputs immediately
-  for (const key of keys) {
-    const sid = slugifyKey(key);
-    const toggle = document.getElementById(`toggle_${sid}`);
-    toggle.addEventListener("change", () => {
-      generateInputs();
-      const result = document.getElementById("result");
-      if (result) result.innerHTML = "";
-    });
-  }
+  getKeysInOrder().forEach((key) => {
+    const t = document.getElementById(`toggle_${slugifyKey(key)}`);
+    if (t) t.addEventListener("change", generateInputs);
+  });
 }
 
 function generateInputs() {
-  const container = document.getElementById("inputs");
-  if (!container) return;
+  const div = document.getElementById("inputs");
+  if (!div) return;
 
-  container.innerHTML = "";
+  div.innerHTML = "";
+  const selected = getSelectedKeys();
 
-  if (!species || species.length === 0) return;
-
-  const keys = getKeysInOrder();
-
-  for (const key of keys) {
+  selected.forEach((key) => {
     const sid = slugifyKey(key);
-    const toggle = document.getElementById(`toggle_${sid}`);
-
-    if (toggle && toggle.checked && !toggle.disabled) {
-      const line = document.createElement("div");
-      line.innerHTML = `${key}: <input id="box_${sid}" autocomplete="off">`;
-      container.appendChild(line);
-      container.appendChild(document.createElement("br"));
-    }
-  }
+    div.innerHTML += `
+      <div>
+        ${escapeHtml(key)}:
+        <input id="box_${sid}" autocomplete="off">
+      </div>
+      <br>
+    `;
+  });
 }
 
-function updateScore() {
-  const scoreEl = document.getElementById("score");
-  if (!scoreEl) return;
-
-  scoreEl.innerHTML = `Correct: ${correctCount} | Wrong: ${wrongCount}`;
-}
-
-function setNextEnabled(enabled) {
-  const nextBtn = document.getElementById("nextBtn");
-  if (nextBtn) nextBtn.disabled = !enabled;
-}
-
-// ====== AUTO-DETOGGLE BLANKS (per question) ======
+// Auto-disable toggles where current value is blank
 function resetToggleAvailability() {
-  // Re-enable everything each question (fresh start)
-  const keys = getKeysInOrder();
-  for (const key of keys) {
-    const sid = slugifyKey(key);
-    const t = document.getElementById(`toggle_${sid}`);
+  getKeysInOrder().forEach((key) => {
+    const t = document.getElementById(`toggle_${slugifyKey(key)}`);
     if (t) t.disabled = false;
-  }
+  });
 }
-
-function disableTogglesForBlankFields() {
-  // If a selected field is blank for THIS species, untick and disable it
-  const keys = getKeysInOrder();
-
-  for (const key of keys) {
-    const sid = slugifyKey(key);
-    const t = document.getElementById(`toggle_${sid}`);
-    if (!t) continue;
-
-    if (t.checked && isBlank(current[key])) {
-      t.checked = false; // detoggle
-      t.disabled = true; // prevent rechecking this question
+function disableBlankTogglesForCurrent() {
+  getKeysInOrder().forEach((key) => {
+    const t = document.getElementById(`toggle_${slugifyKey(key)}`);
+    if (t && t.checked && isBlank(current?.[key])) {
+      t.checked = false;
+      t.disabled = true;
     }
-  }
+  });
 }
 
-// ====== WIKIPEDIA IMAGE FETCHING ======
-async function fetchWikipediaImageUrls(scientificName, maxImages = 12) {
-  if (!scientificName) return [];
-
-  // Cache hit
-  if (wikiImageCache[scientificName]) return wikiImageCache[scientificName];
-
-  // 1) Find the Wikipedia page title for this scientific name
-  const searchUrl =
-    "https://en.wikipedia.org/w/api.php" +
-    "?action=query&format=json&origin=*" +
-    "&list=search" +
-    "&srlimit=1" +
-    "&srsearch=" +
-    encodeURIComponent(scientificName);
-
-  const searchResp = await fetch(searchUrl);
-  const searchData = await searchResp.json();
-
-  if (!searchData?.query?.search?.length) {
-    wikiImageCache[scientificName] = [];
-    return [];
-  }
-
-  const pageTitle = searchData.query.search[0].title;
-
-  // 2) Get image FILE TITLES used on that page
-  const imagesUrl =
-    "https://en.wikipedia.org/w/api.php" +
-    "?action=query&format=json&origin=*" +
-    "&prop=images" +
-    "&titles=" +
-    encodeURIComponent(pageTitle) +
-    "&imlimit=" +
-    maxImages;
-
-  const imagesResp = await fetch(imagesUrl);
-  const imagesData = await imagesResp.json();
-
-  const pages = imagesData?.query?.pages || {};
-  const firstPage = pages[Object.keys(pages)[0]];
-  const imageObjs = firstPage?.images || [];
-
-  // Filter out obvious non-photos
-  const fileTitles = imageObjs
-    .map((o) => o.title)
-    .filter(
-      (t) =>
-        t &&
-        t.startsWith("File:") &&
-        !t.match(/\.(svg|ogg|ogv|pdf)$/i) &&
-        !t.toLowerCase().includes("logo") &&
-        !t.toLowerCase().includes("icon") &&
-        !t.toLowerCase().includes("map") &&
-        !t.toLowerCase().includes("range") &&
-        !t.toLowerCase().includes("diagram")
-    )
-    .slice(0, maxImages);
-
-  if (fileTitles.length === 0) {
-    wikiImageCache[scientificName] = [];
-    return [];
-  }
-
-  // 3) Convert file titles -> direct image URLs via imageinfo
-  const fileTitlesParam = fileTitles.map(encodeURIComponent).join("|");
-
-  const infoUrl =
-    "https://en.wikipedia.org/w/api.php" +
-    "?action=query&format=json&origin=*" +
-    "&prop=imageinfo" +
-    "&iiprop=url" +
-    "&titles=" +
-    fileTitlesParam;
-
-  const infoResp = await fetch(infoUrl);
-  const infoData = await infoResp.json();
-
-  const infoPages = infoData?.query?.pages || {};
-  const urls = Object.values(infoPages)
-    .flatMap((p) => (p?.imageinfo?.[0]?.url ? [p.imageinfo[0].url] : []))
-    .filter(Boolean);
-
-  wikiImageCache[scientificName] = urls;
-  return urls;
+// ================= COMMON NAME FLASHCARD (AUTO-REVEAL) =================
+function getCurrentCommonName() {
+  const key = COMMON_KEY || "Common Name";
+  const v = current ? current[key] : "";
+  return String(v ?? "").trim();
 }
 
-function pickNonRepeatingImage(scientificName, urls) {
-  if (!wikiUsedImages[scientificName]) wikiUsedImages[scientificName] = new Set();
+function updateCommonHintUI() {
+  const box = document.getElementById("commonHintBox");
+  const btn = document.getElementById("revealCommonBtn");
+  if (!box || !btn) return;
 
-  const used = wikiUsedImages[scientificName];
-  const unused = urls.filter((u) => !used.has(u));
-
-  // If we used them all, reset for that species
-  const pool = unused.length ? unused : urls;
-
-  const choice = pool[Math.floor(Math.random() * pool.length)];
-  used.add(choice);
-  return choice;
-}
-
-async function setImageForCurrent() {
-  const img = document.getElementById("animalImage");
-  if (!img) return;
-
-  const showToggle = document.getElementById("showImagesToggle");
-  const showImages = showToggle ? showToggle.checked : true;
-
-  if (!showImages) {
-    // We'll hide via refreshImageDisplay()
+  if (!commonHintEnabled) {
+    box.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "Hide Common Name";
+    commonRevealed = false;
     return;
   }
 
-  const sci = current?.["Scientific Name"];
-  if (!sci) return;
+  // Flashcard mode: auto-reveal when enabled
+  btn.disabled = false;
 
-  // Loading placeholder while API runs
-  img.src = "https://upload.wikimedia.org/wikipedia/commons/placeholder.png";
+  const common = getCurrentCommonName();
+  if (!common) {
+    box.style.display = "block";
+    box.innerHTML = "No Common Name available for this entry.";
+    btn.textContent = "Hide Common Name";
+    commonRevealed = true; // treat as revealed
+    return;
+  }
 
-  try {
-    const urls = await fetchWikipediaImageUrls(sci, 12);
-    if (!urls.length) return;
-
-    const chosen = pickNonRepeatingImage(sci, urls);
-    img.src = chosen;
-  } catch (e) {
-    console.log("Image fetch failed:", e);
+  if (commonRevealed) {
+    box.style.display = "block";
+    box.innerHTML = `<strong>Common Name:</strong> ${escapeHtml(common)}`;
+    btn.textContent = "Hide Common Name";
+  } else {
+    box.style.display = "none";
+    btn.textContent = "Reveal Common Name";
   }
 }
 
-// Hide/show image immediately when toggled; reload current image when turning on
-function refreshImageDisplay() {
-  const img = document.getElementById("animalImage");
-  const showToggle = document.getElementById("showImagesToggle");
-  const showImages = showToggle ? showToggle.checked : true;
+function toggleCommonName() {
+  if (!commonHintEnabled) return;
+  commonRevealed = !commonRevealed;
+  updateCommonHintUI();
+}
+window.toggleCommonName = toggleCommonName;
 
+// ================= IMAGE SYSTEM (keep “some work”) =================
+const wikidataInfoCache = {};
+const imageUrlCache = {};
+const badImageUrls = {};
+
+function getBadSet(sci) {
+  if (!badImageUrls[sci]) badImageUrls[sci] = new Set();
+  return badImageUrls[sci];
+}
+function looksLikeJunkFilename(title) {
+  const t = String(title).toLowerCase();
+  return (
+    t.includes("map") ||
+    t.includes("range") ||
+    t.includes("diagram") ||
+    t.includes("logo") ||
+    t.includes("icon") ||
+    t.includes("symbol") ||
+    t.includes("flag") ||
+    t.includes("distribution") ||
+    t.includes("coat_of_arms")
+  );
+}
+function isAllowedFileExt(title) {
+  return /\.(jpg|jpeg|png|webp)$/i.test(String(title));
+}
+function setPlaceholderImage() {
+  const img = document.getElementById("animalImage");
+  if (!img) return;
+  img.onerror = null;
+  img.src = "https://upload.wikimedia.org/wikipedia/commons/placeholder.png";
+}
+async function commonsThumbUrlsFromFileTitles(fileTitles, width = 900) {
+  if (!fileTitles.length) return [];
+  const titlesParam = fileTitles.map((t) => (t.startsWith("File:") ? t : `File:${t}`));
+  const joined = titlesParam.map(encodeURIComponent).join("|");
+
+  const url =
+    "https://commons.wikimedia.org/w/api.php" +
+    "?action=query&format=json&origin=*" +
+    "&prop=imageinfo&iiprop=url" +
+    `&iiurlwidth=${width}` +
+    "&titles=" + joined;
+
+  const resp = await fetch(url);
+  const data = await resp.json();
+
+  const pages = data?.query?.pages || {};
+  const urls = [];
+
+  for (const p of Object.values(pages)) {
+    const ii = p?.imageinfo?.[0];
+    const u = ii?.thumburl || ii?.url;
+    if (u) urls.push(u);
+  }
+  return urls;
+}
+async function fetchCommonsCategoryFileTitles(categoryName, limit = 60) {
+  if (!categoryName) return [];
+
+  const url =
+    "https://commons.wikimedia.org/w/api.php" +
+    "?action=query&format=json&origin=*" +
+    "&list=categorymembers&cmtype=file" +
+    `&cmlimit=${limit}` +
+    "&cmtitle=" + encodeURIComponent(`Category:${categoryName}`);
+
+  const resp = await fetch(url);
+  const data = await resp.json();
+  const members = data?.query?.categorymembers || [];
+
+  return members
+    .map((m) => m.title)
+    .filter((t) => isAllowedFileExt(t))
+    .filter((t) => !looksLikeJunkFilename(t));
+}
+async function fetchWikidataInfo(scientificName) {
+  const sci = cleanScientificName(scientificName);
+  if (!sci) return null;
+
+  if (wikidataInfoCache[sci] !== undefined) return wikidataInfoCache[sci];
+
+  const searchUrl =
+    "https://www.wikidata.org/w/api.php" +
+    "?action=wbsearchentities&format=json&origin=*" +
+    "&language=en&type=item&limit=10" +
+    "&search=" + encodeURIComponent(sci);
+
+  const s = await fetch(searchUrl).then((r) => r.json());
+  const hits = s?.search || [];
+  if (!hits.length) {
+    wikidataInfoCache[sci] = null;
+    return null;
+  }
+
+  const ids = hits.map((h) => h.id).join("|");
+  const entitiesUrl =
+    "https://www.wikidata.org/w/api.php" +
+    "?action=wbgetentities&format=json&origin=*" +
+    "&props=claims&ids=" + encodeURIComponent(ids);
+
+  const e = await fetch(entitiesUrl).then((r) => r.json());
+  const entities = e?.entities || {};
+
+  const target = sci.toLowerCase();
+  let best = null;
+
+  for (const ent of Object.values(entities)) {
+    const taxon = ent?.claims?.P225?.[0]?.mainsnak?.datavalue?.value;
+    if (taxon && String(taxon).trim().toLowerCase() === target) {
+      best = ent;
+      break;
+    }
+  }
+
+  if (!best) {
+    wikidataInfoCache[sci] = null;
+    return null;
+  }
+
+  const imageFile = best?.claims?.P18?.[0]?.mainsnak?.datavalue?.value || null;
+  const commonsCategory = best?.claims?.P373?.[0]?.mainsnak?.datavalue?.value || null;
+
+  const info = {
+    imageFile: imageFile ? String(imageFile) : null,
+    commonsCategory: commonsCategory ? String(commonsCategory) : null,
+  };
+
+  wikidataInfoCache[sci] = info;
+  return info;
+}
+async function getImageUrlsForSpecies(scientificName) {
+  const sci = cleanScientificName(scientificName);
+  if (!sci) return [];
+  if (imageUrlCache[sci]) return imageUrlCache[sci];
+
+  const info = await fetchWikidataInfo(sci);
+  let urls = [];
+
+  if (info?.commonsCategory) {
+    const fileTitles = await fetchCommonsCategoryFileTitles(info.commonsCategory, 80);
+    const thumbs = await commonsThumbUrlsFromFileTitles(fileTitles.slice(0, 20), 900);
+    urls = thumbs.filter(Boolean);
+  }
+
+  if (!urls.length && info?.imageFile) {
+    const thumbs = await commonsThumbUrlsFromFileTitles([`File:${info.imageFile}`], 900);
+    urls = thumbs.filter(Boolean);
+  }
+
+  urls = Array.from(new Set(urls));
+  imageUrlCache[sci] = urls;
+  return urls;
+}
+async function setImageForCurrent(tokenAtStart) {
+  const img = document.getElementById("animalImage");
+  const toggle = document.getElementById("showImagesToggle");
   if (!img) return;
 
-  if (!showImages) {
+  if (toggle && !toggle.checked) {
+    img.style.display = "none";
+    return;
+  }
+  img.style.display = "block";
+  setPlaceholderImage();
+
+  const sciRaw = SCI_KEY ? current?.[SCI_KEY] : "";
+  const sci = cleanScientificName(sciRaw);
+  if (!sci) return;
+
+  try {
+    const urls = await getImageUrlsForSpecies(sci);
+    if (tokenAtStart !== questionToken) return;
+    if (!urls.length) return;
+
+    const bad = getBadSet(sci);
+    const candidates = urls.filter(u => !bad.has(u));
+    const pool = candidates.length ? candidates : urls;
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+
+    img.src = chosen;
+    img.onerror = () => {
+      bad.add(chosen);
+      setPlaceholderImage();
+    };
+  } catch (e) {
+    console.log("Image error:", e);
+    setPlaceholderImage();
+  }
+}
+function refreshImageDisplay() {
+  const img = document.getElementById("animalImage");
+  const t = document.getElementById("showImagesToggle");
+  if (!img) return;
+
+  if (t && !t.checked) {
     img.style.display = "none";
   } else {
     img.style.display = "block";
-    if (current) setImageForCurrent();
+    if (current) setImageForCurrent(questionToken);
   }
 }
 
-// ====== QUIZ LOGIC ======
+// ================= QUIZ LOGIC =================
 function newQuestion() {
-  if (!species || species.length === 0) return;
+  if (!species.length) return;
 
-  // Lock Next until user submits this question
-  setNextEnabled(false);
+  computeFilteredSpecies();
 
-  // Pick a random species first
-  current = species[Math.floor(Math.random() * species.length)];
+  if (!filteredSpecies.length) {
+    current = null;
+    setNextEnabled(false);
+    const res = document.getElementById("result");
+    if (res) res.innerHTML = "No species match your current filters. Turn on at least one filter.";
+    setPlaceholderImage();
 
-  // Re-enable toggles, then detoggle/disable blanks for this species
-  resetToggleAvailability();
-  disableTogglesForBlankFields();
-
-  // If user ended up with nothing selected, ask them to select something
-  const selectedKeys = getSelectedKeys();
-  const resultEl = document.getElementById("result");
-
-  if (selectedKeys.length === 0) {
-    if (resultEl) {
-      resultEl.innerHTML =
-        "Select at least one checkbox (or this row is missing data for your selected fields).";
-    }
-    generateInputs(); // likely none
-    refreshImageDisplay();
+    // Hide hint box if no current
+    commonRevealed = false;
+    updateCommonHintUI();
     return;
   }
 
-  // Build input boxes for selected fields
+  questionToken += 1;
+  const myToken = questionToken;
+
+  setNextEnabled(false);
+  current = filteredSpecies[Math.floor(Math.random() * filteredSpecies.length)];
+
+  // Rebuild inputs based on selected test fields
+  resetToggleAvailability();
+  disableBlankTogglesForCurrent();
   generateInputs();
 
-  // Set image using Wikipedia (Scientific Name) and respect toggle
-  setImageForCurrent();
-  refreshImageDisplay();
+  const res = document.getElementById("result");
+  if (res) res.innerHTML = "";
 
-  // Clear result text and clear input values
-  if (resultEl) resultEl.innerHTML = "";
-  for (const key of selectedKeys) {
-    const sid = slugifyKey(key);
-    const box = document.getElementById(`box_${sid}`);
-    if (box) box.value = "";
-  }
+  // Flashcard behavior:
+  // If hint is enabled, auto-reveal every question
+  commonRevealed = commonHintEnabled ? true : false;
+  updateCommonHintUI();
+
+  setImageForCurrent(myToken);
 }
 
 function checkAnswer() {
-  if (!current) {
-    const resultEl = document.getElementById("result");
-    if (resultEl) resultEl.innerHTML = "No question loaded yet. Click Next or refresh.";
+  if (!current) return;
+
+  const selected = getSelectedKeys();
+  const res = document.getElementById("result");
+
+  if (!selected.length) {
+    if (res) res.innerHTML = "Select at least one checkbox to be tested on.";
     return;
   }
 
-  const selectedKeys = getSelectedKeys();
-  const resultEl = document.getElementById("result");
-
-  if (selectedKeys.length === 0) {
-    if (resultEl) resultEl.innerHTML = "Select at least one checkbox to be tested on.";
-    return;
-  }
-
-  let isCorrect = true;
-
-  for (const key of selectedKeys) {
+  let ok = true;
+  selected.forEach((key) => {
     const sid = slugifyKey(key);
-    const box = document.getElementById(`box_${sid}`);
-    const userInput = normalizeAnswer(box ? box.value : "");
-    const correctValue = normalizeAnswer(current[key]);
+    const el = document.getElementById(`box_${sid}`);
+    const userVal = normalizeAnswer(el ? el.value : "");
+    const correctVal = normalizeAnswer(current[key]);
+    if (userVal !== correctVal) ok = false;
+  });
 
-    if (userInput !== correctValue) {
-      isCorrect = false;
-    }
-  }
-
-  if (isCorrect) {
+  if (ok) {
     correctCount++;
-    if (resultEl) resultEl.innerHTML = "Correct!";
+    if (res) res.innerHTML = "Correct!";
   } else {
     wrongCount++;
-
-    // Show all selected fields and their correct values
-    let feedback = "Wrong. Correct answers:<br><br>";
-    for (const key of selectedKeys) {
-      feedback += `${key}: ${current[key] ?? ""}<br>`;
-    }
-    if (resultEl) resultEl.innerHTML = feedback;
+    let out = "Wrong. Correct answers:<br><br>";
+    selected.forEach((k) => (out += `${escapeHtml(k)}: ${escapeHtml(current[k] ?? "")}<br>`));
+    if (res) res.innerHTML = out;
   }
 
   updateScore();
-
-  // Unlock Next after submission
   setNextEnabled(true);
 }
 
@@ -383,37 +504,66 @@ function nextQuestion() {
   newQuestion();
 }
 
-// ====== INIT ======
+window.checkAnswer = checkAnswer;
+window.nextQuestion = nextQuestion;
+
+// ================= INIT =================
 document.addEventListener("DOMContentLoaded", () => {
   updateScore();
   setNextEnabled(false);
 
-  // Make the image toggle work instantly
-  const showToggle = document.getElementById("showImagesToggle");
-  if (showToggle) {
-    showToggle.addEventListener("change", refreshImageDisplay);
+  // Flashcard toggle binding
+  const hintToggle = document.getElementById("enableCommonHintToggle");
+  if (hintToggle) {
+    hintToggle.addEventListener("change", () => {
+      commonHintEnabled = hintToggle.checked;
+
+      // Flashcard mode: turning it ON should instantly reveal
+      commonRevealed = commonHintEnabled ? true : false;
+      updateCommonHintUI();
+    });
   }
-  refreshImageDisplay();
+
+  // Filter bindings
+  const filterIds = ["filterBird", "filterMammal", "filterReptile"];
+  filterIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => {
+      // When filters change, immediately pick a new valid question
+      newQuestion();
+    });
+  });
+
+  // Image show/hide
+  const showToggle = document.getElementById("showImagesToggle");
+  if (showToggle) showToggle.addEventListener("change", refreshImageDisplay);
 
   fetch(DATA_FILE)
-    .then((response) => response.json())
+    .then((r) => r.json())
     .then((data) => {
       species = data;
 
+      SCI_KEY = detectKeyLike("scientific", "name");
+      TYPE_KEY = detectKeyLike("type");
+
+      // Hard set if exact column exists
+      const keys = getKeysInOrder();
+      COMMON_KEY = keys.includes("Common Name") ? "Common Name" : detectKeyLike("common", "name");
+
+      console.log("Detected keys:", { SCI_KEY, COMMON_KEY, TYPE_KEY });
+
       createToggles();
-      generateInputs(); // initial boxes (before first question)
+      generateInputs();
+
+      computeFilteredSpecies();
       newQuestion();
     })
-    .catch((error) => {
-      console.log("Error loading JSON:", error);
-      const resultEl = document.getElementById("result");
-      if (resultEl) {
-        resultEl.innerHTML =
-          "Could not load species data. Check the JSON filename and that the server is running.";
-      }
+    .catch((e) => {
+      console.log(e);
+      const res = document.getElementById("result");
+      if (res) res.innerHTML = "Failed to load species data.";
     });
 
-  // Optional: Enter key submits
   document.addEventListener("keydown", (e) => {
     if (e.key === "Enter") checkAnswer();
   });
