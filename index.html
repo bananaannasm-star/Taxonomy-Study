@@ -39,7 +39,7 @@
     <h2>Settings</h2>
 
     <p id="version" class="muted">
-      <strong>Version:</strong> v1.5 — Updated Jan 20, 2026
+      <strong>Version:</strong> v1.6 — Updated Jan 20, 2026
     </p>
 
     <hr>
@@ -64,15 +64,25 @@
 
     <hr>
 
-    <h3>Flashcard hint</h3>
+    <h3>Flashcard hints</h3>
+
     <label>
       <input type="checkbox" id="enableCommonHintToggle">
       Enable Common Name hint (auto-reveal)
     </label>
-
-    <div style="margin-top: 10px;">
+    <div style="margin-top: 8px; margin-bottom: 12px;">
       <button type="button" onclick="toggleCommonName()" id="revealCommonBtn" disabled>
         Hide Common Name
+      </button>
+    </div>
+
+    <label>
+      <input type="checkbox" id="enableScientificHintToggle">
+      Enable Scientific Name hint (auto-reveal)
+    </label>
+    <div style="margin-top: 8px;">
+      <button type="button" onclick="toggleScientificName()" id="revealScientificBtn" disabled>
+        Hide Scientific Name
       </button>
     </div>
 
@@ -104,7 +114,7 @@
       <li>Click <strong>Submit</strong> to check your answers and update your score.</li>
       <li>Click <strong>Next</strong> to get a new species.</li>
       <li>Use <strong>Show images</strong> to turn images on/off (harder studying: turn off).</li>
-      <li>If you enable <strong>Common Name hint</strong>, it auto-reveals like flashcards.</li>
+      <li>If you enable hints, they auto-reveal like flashcards.</li>
     </ol>
 
     <hr>
@@ -113,7 +123,9 @@
       <img id="animalImage" alt="Species image">
     </div>
 
+    <!-- HINT BOXES -->
     <div id="commonHintBox" class="hintBox"></div>
+    <div id="scientificHintBox" class="hintBox"></div>
 
     <hr>
 

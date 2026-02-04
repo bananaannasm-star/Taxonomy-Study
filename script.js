@@ -14,12 +14,15 @@ let TYPE_KEY = null;
 
 let questionToken = 0;
 
-// Flashcard hint state
+// Hint state (flashcard style)
 let commonHintEnabled = false;
 let commonRevealed = false;
 
+let scientificHintEnabled = false;
+let scientificRevealed = false;
+
 // Filter state
-let filteredSpecies = []; // subset of species based on Bird/Mammal/Reptile filters
+let filteredSpecies = [];
 
 // ================= HELPERS =================
 function slugifyKey(key) {
@@ -74,11 +77,10 @@ function cleanScientificName(raw) {
   return s.trim();
 }
 
-// ================= FILTERS (Bird/Mammal/Reptile) =================
+// ================= FILTERS =================
 function normTypeValue(v) {
   return String(v ?? "").trim().toLowerCase();
 }
-
 function getActiveTypeFilters() {
   const bird = document.getElementById("filterBird")?.checked;
   const mammal = document.getElementById("filterMammal")?.checked;
@@ -90,19 +92,16 @@ function getActiveTypeFilters() {
   if (reptile) active.add("reptile");
   return active;
 }
-
 function computeFilteredSpecies() {
   const status = document.getElementById("filterStatus");
   const active = getActiveTypeFilters();
 
-  // If none checked, don't allow studying anything
   if (active.size === 0) {
     filteredSpecies = [];
     if (status) status.textContent = "No filters selected — check at least one (Bird/Mammal/Reptile).";
     return;
   }
 
-  // If there is no Type column, just pass everything through
   if (!TYPE_KEY) {
     filteredSpecies = [...species];
     if (status) status.textContent = `Type column not found — studying all species (${filteredSpecies.length}).`;
@@ -120,7 +119,6 @@ function getSelectedKeys() {
     return t && t.checked && !t.disabled;
   });
 }
-
 function createToggles() {
   const area = document.getElementById("toggleArea");
   if (!area) return;
@@ -136,7 +134,6 @@ function createToggles() {
     if (t) t.addEventListener("change", generateInputs);
   });
 }
-
 function generateInputs() {
   const div = document.getElementById("inputs");
   if (!div) return;
@@ -155,8 +152,6 @@ function generateInputs() {
     `;
   });
 }
-
-// Auto-disable toggles where current value is blank
 function resetToggleAvailability() {
   getKeysInOrder().forEach((key) => {
     const t = document.getElementById(`toggle_${slugifyKey(key)}`);
@@ -173,13 +168,17 @@ function disableBlankTogglesForCurrent() {
   });
 }
 
-// ================= COMMON NAME FLASHCARD (AUTO-REVEAL) =================
+// ================= HINTS (FLASHCARD) =================
 function getCurrentCommonName() {
   const key = COMMON_KEY || "Common Name";
-  const v = current ? current[key] : "";
-  return String(v ?? "").trim();
+  return String(current?.[key] ?? "").trim();
+}
+function getCurrentScientificName() {
+  const key = SCI_KEY || "Scientific Name";
+  return String(current?.[key] ?? "").trim();
 }
 
+// Common Name hint
 function updateCommonHintUI() {
   const box = document.getElementById("commonHintBox");
   const btn = document.getElementById("revealCommonBtn");
@@ -193,7 +192,6 @@ function updateCommonHintUI() {
     return;
   }
 
-  // Flashcard mode: auto-reveal when enabled
   btn.disabled = false;
 
   const common = getCurrentCommonName();
@@ -201,7 +199,7 @@ function updateCommonHintUI() {
     box.style.display = "block";
     box.innerHTML = "No Common Name available for this entry.";
     btn.textContent = "Hide Common Name";
-    commonRevealed = true; // treat as revealed
+    commonRevealed = true;
     return;
   }
 
@@ -214,7 +212,6 @@ function updateCommonHintUI() {
     btn.textContent = "Reveal Common Name";
   }
 }
-
 function toggleCommonName() {
   if (!commonHintEnabled) return;
   commonRevealed = !commonRevealed;
@@ -222,7 +219,48 @@ function toggleCommonName() {
 }
 window.toggleCommonName = toggleCommonName;
 
-// ================= IMAGE SYSTEM (keep “some work”) =================
+// Scientific Name hint
+function updateScientificHintUI() {
+  const box = document.getElementById("scientificHintBox");
+  const btn = document.getElementById("revealScientificBtn");
+  if (!box || !btn) return;
+
+  if (!scientificHintEnabled) {
+    box.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "Hide Scientific Name";
+    scientificRevealed = false;
+    return;
+  }
+
+  btn.disabled = false;
+
+  const sci = getCurrentScientificName();
+  if (!sci) {
+    box.style.display = "block";
+    box.innerHTML = "No Scientific Name available for this entry.";
+    btn.textContent = "Hide Scientific Name";
+    scientificRevealed = true;
+    return;
+  }
+
+  if (scientificRevealed) {
+    box.style.display = "block";
+    box.innerHTML = `<strong>Scientific Name:</strong> ${escapeHtml(sci)}`;
+    btn.textContent = "Hide Scientific Name";
+  } else {
+    box.style.display = "none";
+    btn.textContent = "Reveal Scientific Name";
+  }
+}
+function toggleScientificName() {
+  if (!scientificHintEnabled) return;
+  scientificRevealed = !scientificRevealed;
+  updateScientificHintUI();
+}
+window.toggleScientificName = toggleScientificName;
+
+// ================= IMAGE SYSTEM (unchanged, “some work”) =================
 const wikidataInfoCache = {};
 const imageUrlCache = {};
 const badImageUrls = {};
@@ -438,9 +476,10 @@ function newQuestion() {
     if (res) res.innerHTML = "No species match your current filters. Turn on at least one filter.";
     setPlaceholderImage();
 
-    // Hide hint box if no current
     commonRevealed = false;
+    scientificRevealed = false;
     updateCommonHintUI();
+    updateScientificHintUI();
     return;
   }
 
@@ -450,7 +489,6 @@ function newQuestion() {
   setNextEnabled(false);
   current = filteredSpecies[Math.floor(Math.random() * filteredSpecies.length)];
 
-  // Rebuild inputs based on selected test fields
   resetToggleAvailability();
   disableBlankTogglesForCurrent();
   generateInputs();
@@ -458,10 +496,11 @@ function newQuestion() {
   const res = document.getElementById("result");
   if (res) res.innerHTML = "";
 
-  // Flashcard behavior:
-  // If hint is enabled, auto-reveal every question
+  // Auto-reveal if enabled
   commonRevealed = commonHintEnabled ? true : false;
+  scientificRevealed = scientificHintEnabled ? true : false;
   updateCommonHintUI();
+  updateScientificHintUI();
 
   setImageForCurrent(myToken);
 }
@@ -499,10 +538,7 @@ function checkAnswer() {
   updateScore();
   setNextEnabled(true);
 }
-
-function nextQuestion() {
-  newQuestion();
-}
+function nextQuestion() { newQuestion(); }
 
 window.checkAnswer = checkAnswer;
 window.nextQuestion = nextQuestion;
@@ -512,29 +548,31 @@ document.addEventListener("DOMContentLoaded", () => {
   updateScore();
   setNextEnabled(false);
 
-  // Flashcard toggle binding
-  const hintToggle = document.getElementById("enableCommonHintToggle");
-  if (hintToggle) {
-    hintToggle.addEventListener("change", () => {
-      commonHintEnabled = hintToggle.checked;
-
-      // Flashcard mode: turning it ON should instantly reveal
+  // Hint toggles
+  const commonToggle = document.getElementById("enableCommonHintToggle");
+  if (commonToggle) {
+    commonToggle.addEventListener("change", () => {
+      commonHintEnabled = commonToggle.checked;
       commonRevealed = commonHintEnabled ? true : false;
       updateCommonHintUI();
     });
   }
+  const sciToggle = document.getElementById("enableScientificHintToggle");
+  if (sciToggle) {
+    sciToggle.addEventListener("change", () => {
+      scientificHintEnabled = sciToggle.checked;
+      scientificRevealed = scientificHintEnabled ? true : false;
+      updateScientificHintUI();
+    });
+  }
 
   // Filter bindings
-  const filterIds = ["filterBird", "filterMammal", "filterReptile"];
-  filterIds.forEach(id => {
+  ["filterBird", "filterMammal", "filterReptile"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener("change", () => {
-      // When filters change, immediately pick a new valid question
-      newQuestion();
-    });
+    if (el) el.addEventListener("change", () => newQuestion());
   });
 
-  // Image show/hide
+  // Images toggle
   const showToggle = document.getElementById("showImagesToggle");
   if (showToggle) showToggle.addEventListener("change", refreshImageDisplay);
 
@@ -546,9 +584,10 @@ document.addEventListener("DOMContentLoaded", () => {
       SCI_KEY = detectKeyLike("scientific", "name");
       TYPE_KEY = detectKeyLike("type");
 
-      // Hard set if exact column exists
+      // Hard set for exact key names if present
       const keys = getKeysInOrder();
       COMMON_KEY = keys.includes("Common Name") ? "Common Name" : detectKeyLike("common", "name");
+      if (!SCI_KEY && keys.includes("Scientific Name")) SCI_KEY = "Scientific Name";
 
       console.log("Detected keys:", { SCI_KEY, COMMON_KEY, TYPE_KEY });
 
