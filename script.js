@@ -77,6 +77,19 @@ function cleanScientificName(raw) {
   return s.trim();
 }
 
+// ✅ NEW: clear result color classes
+function clearResultStyles() {
+  const res = document.getElementById("result");
+  if (!res) return;
+  res.classList.remove("result-correct", "result-wrong");
+}
+
+// ✅ NEW: clear input color classes
+function clearInputStyles() {
+  const inputs = document.querySelectorAll("#inputs input");
+  inputs.forEach((i) => i.classList.remove("input-correct", "input-wrong"));
+}
+
 // ================= FILTERS =================
 function normTypeValue(v) {
   return String(v ?? "").trim().toLowerCase();
@@ -113,27 +126,44 @@ function computeFilteredSpecies() {
 }
 
 // ================= TOGGLES + INPUTS =================
+
+// ✅ NEW: Type is not testable anymore
+function isTypeKey(key) {
+  if (!TYPE_KEY) return false;
+  return String(key).trim().toLowerCase() === String(TYPE_KEY).trim().toLowerCase();
+}
+
 function getSelectedKeys() {
   return getKeysInOrder().filter((key) => {
+    // Never allow "Type" to be tested
+    if (isTypeKey(key)) return false;
+
     const t = document.getElementById(`toggle_${slugifyKey(key)}`);
     return t && t.checked && !t.disabled;
   });
 }
+
 function createToggles() {
   const area = document.getElementById("toggleArea");
   if (!area) return;
 
   area.innerHTML = "";
+
   getKeysInOrder().forEach((key) => {
+    // ✅ Remove the Type checkbox from the list entirely
+    if (isTypeKey(key)) return;
+
     const sid = slugifyKey(key);
     area.innerHTML += `<label><input type="checkbox" id="toggle_${sid}" checked> ${escapeHtml(key)}</label><br>`;
   });
 
   getKeysInOrder().forEach((key) => {
+    if (isTypeKey(key)) return;
     const t = document.getElementById(`toggle_${slugifyKey(key)}`);
     if (t) t.addEventListener("change", generateInputs);
   });
 }
+
 function generateInputs() {
   const div = document.getElementById("inputs");
   if (!div) return;
@@ -146,20 +176,28 @@ function generateInputs() {
     div.innerHTML += `
       <div>
         ${escapeHtml(key)}:
-        <input id="box_${sid}" autocomplete="off">
+        <input class="answerInput" id="box_${sid}" autocomplete="off">
       </div>
       <br>
     `;
   });
+
+  // ✅ ensure styles start clean
+  clearInputStyles();
 }
+
 function resetToggleAvailability() {
   getKeysInOrder().forEach((key) => {
+    if (isTypeKey(key)) return;
     const t = document.getElementById(`toggle_${slugifyKey(key)}`);
     if (t) t.disabled = false;
   });
 }
+
 function disableBlankTogglesForCurrent() {
   getKeysInOrder().forEach((key) => {
+    if (isTypeKey(key)) return;
+
     const t = document.getElementById(`toggle_${slugifyKey(key)}`);
     if (t && t.checked && isBlank(current?.[key])) {
       t.checked = false;
@@ -473,7 +511,10 @@ function newQuestion() {
     current = null;
     setNextEnabled(false);
     const res = document.getElementById("result");
-    if (res) res.innerHTML = "No species match your current filters. Turn on at least one filter.";
+    if (res) {
+      clearResultStyles();
+      res.innerHTML = "No species match your current filters. Turn on at least one filter.";
+    }
     setPlaceholderImage();
 
     commonRevealed = false;
@@ -494,7 +535,10 @@ function newQuestion() {
   generateInputs();
 
   const res = document.getElementById("result");
-  if (res) res.innerHTML = "";
+  if (res) {
+    clearResultStyles();
+    res.innerHTML = "";
+  }
 
   // Auto-reveal if enabled
   commonRevealed = commonHintEnabled ? true : false;
@@ -502,6 +546,7 @@ function newQuestion() {
   updateCommonHintUI();
   updateScientificHintUI();
 
+  clearInputStyles();
   setImageForCurrent(myToken);
 }
 
@@ -512,32 +557,55 @@ function checkAnswer() {
   const res = document.getElementById("result");
 
   if (!selected.length) {
-    if (res) res.innerHTML = "Select at least one checkbox to be tested on.";
+    if (res) {
+      clearResultStyles();
+      res.innerHTML = "Select at least one checkbox to be tested on.";
+    }
     return;
   }
 
-  let ok = true;
+  // ✅ reset previous colors
+  clearInputStyles();
+  if (res) clearResultStyles();
+
+  let allCorrect = true;
+
   selected.forEach((key) => {
     const sid = slugifyKey(key);
     const el = document.getElementById(`box_${sid}`);
-    const userVal = normalizeAnswer(el ? el.value : "");
+    if (!el) return;
+
+    const userVal = normalizeAnswer(el.value);
     const correctVal = normalizeAnswer(current[key]);
-    if (userVal !== correctVal) ok = false;
+
+    if (userVal === correctVal) {
+      el.classList.add("input-correct");
+    } else {
+      el.classList.add("input-wrong");
+      allCorrect = false;
+    }
   });
 
-  if (ok) {
+  if (allCorrect) {
     correctCount++;
-    if (res) res.innerHTML = "Correct!";
+    if (res) {
+      res.classList.add("result-correct");
+      res.innerHTML = "Correct!";
+    }
   } else {
     wrongCount++;
-    let out = "Wrong. Correct answers:<br><br>";
-    selected.forEach((k) => (out += `${escapeHtml(k)}: ${escapeHtml(current[k] ?? "")}<br>`));
-    if (res) res.innerHTML = out;
+    if (res) {
+      res.classList.add("result-wrong");
+      let out = "Wrong. Correct answers:<br><br>";
+      selected.forEach((k) => (out += `${escapeHtml(k)}: ${escapeHtml(current[k] ?? "")}<br>`));
+      res.innerHTML = out;
+    }
   }
 
   updateScore();
   setNextEnabled(true);
 }
+
 function nextQuestion() { newQuestion(); }
 
 window.checkAnswer = checkAnswer;
@@ -600,7 +668,10 @@ document.addEventListener("DOMContentLoaded", () => {
     .catch((e) => {
       console.log(e);
       const res = document.getElementById("result");
-      if (res) res.innerHTML = "Failed to load species data.";
+      if (res) {
+        clearResultStyles();
+        res.innerHTML = "Failed to load species data.";
+      }
     });
 
   document.addEventListener("keydown", (e) => {

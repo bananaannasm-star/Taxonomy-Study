@@ -28,6 +28,26 @@
       background: #fff;
     }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    /* ✅ NEW: input feedback styles */
+    .answerInput {
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #bbb;
+      outline: none;
+    }
+    .answerInput.input-correct {
+      border: 2px solid #1f8a3b;
+      background: #eaffef;
+    }
+    .answerInput.input-wrong {
+      border: 2px solid #c62828;
+      background: #ffecec;
+    }
+
+    /* ✅ NEW: result feedback styles */
+    #result.result-correct { color: #1f8a3b; font-weight: bold; }
+    #result.result-wrong { color: #c62828; font-weight: bold; }
   </style>
 </head>
 
@@ -39,7 +59,7 @@
     <h2>Settings</h2>
 
     <p id="version" class="muted">
-      <strong>Version:</strong> v1.7 — Updated Feb 3, 2026
+      <strong>Version:</strong> v1.8 — Updated Feb 3, 2026
     </p>
 
     <hr>
@@ -113,9 +133,13 @@
       <li>Type your answers in the input boxes.</li>
       <li>Click <strong>Submit</strong> to check your answers and update your score.</li>
       <li>Click <strong>Next</strong> to get a new species.</li>
-      <li>Use <strong>Show images</strong> to turn images on/off (harder studying: turn off).</li>
-      <li>If you enable hints, they auto-reveal like flashcards.</li>
+      <li>Use <strong>Show images</strong> to turn images on/off (harder studying: turn off)
+
+(Note:The images are not always accurate since they come from Wikipedia so use this function with caution.)</li>
+      <li>If you <strong>enable hints</strong>, they auto-reveal like flashcards.</li>
     </ol>
+
+    <h3>Good luck! - Anna :)</h3>
 
     <hr>
 
